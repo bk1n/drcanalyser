@@ -10,134 +10,249 @@ format_standard_xl <- function(path) {
     return(df)
 }
 
-# Define the V1 plate layout; see viability_assay_plate_layout.xlsx for more info on V1 layout.
-# each list has columns and rows specified for layout
-# columns should be integer ranges, rows should be vector or list of vectors
-plate_layout_v1 <- function() {
-    # n repeats per plate
-    n_repeats <- 3
-    n_steps <- 12
-
-    # define plate layout
-    # where a list is supplied for rows or columns, repeats are taken for each element in the list
-    doses <- list(
-        "columns" = 2:7,
-        "rows" = list(c("B", "C", "D"), c("E", "F", "G"))
-    )
-
-    neg_ctrl <- list(
-        "columns" = 8:9,
-        "rows" = c("B", "C", "D", "E", "F", "G")
-    )
-
-    background <- list(
-        "columns" = 10:11,
-        "rows" = c("B", "C", "D", "E", "F", "G")
-    )
-
-    return(list(
-        doses = doses,
-        neg_ctrl = neg_ctrl,
-        background = background
-    ))
-}
-
 # Calculates serial dilution doses for a halflog dilution, with n_steps and a top_dose
 get_halflog_doses <- function(top_dose = 30, n_steps = 0:11) {
     return(sapply(n_steps, function(n) top_dose / (10^(0.5 * n))))
 }
 
-# Given a plate and a plate layout this function will calculate average intensities for technical replicates, normalise intensities to background, and calculate percentage of maximum normalised response.
-# Args:
-# - plate: df of plate, 96well plates, with columns 1:12 and rownames A:H
-# - plate_layout: named list with 'doses' = dosed wells, 'neg_ctrl' = negative control, and 'background' = background wells. See 'plate_layout_v1' for more details on required format.
-# If lists are supplied in plate_layout$doses$columns or $rows, instead of vectors, then these will be assumed to be part of the same dose dilution sequence.
-# Currently, doses are fetched from get_halflog_doses
-# Returns a data.frame with mean intensities, intensities normalised to background, and intensities normalised to negative control (100% intensity).
-process_plate <- function(plate, plate_layout) {
-    # TODO - plate splitting only works for split rows currently, not columns
-    # TODO - plate splitting assumes continuous ranges of rows, as in plate_layout_v1
-    # TODO - change how doses are defined in dataframe - currently very static
+# Checks validity of plate layout from spreadsheet
+check_plate_layout <- function(layout) {
+    mat <- as.matrix(layout)[, -1]
+    colnames(mat) <- NULL
+    rownames(mat) <- NULL
 
-    if (length(plate_layout$doses$rows) > 1) {
-        split_plate <- lapply(plate_layout$doses$rows, function(rows) plate[rows, plate_layout$doses$columns])
-        intensities <- do.call(cbind, split_plate)
+    contents <- table(mat)
+    contents_vec <- as.vector(contents)
+    names(contents_vec) <- names(contents)
+
+    cat("Number of wells included in layout:\n")
+    print(contents_vec)
+
+    clean_contents_vec <- gsub("::n[0-9]", "", names(contents_vec))
+    check <- c("bckgrnd", "neg_ctrl", "trt") %in% clean_contents_vec
+    names(check) <- c("bckgrnd", "neg_ctrl", "trt")
+
+    if (all(check)) {
+        cat("All necessary elements found in layout\n")
+        return(TRUE)
     } else {
-        intensities <- plate[plate_layout$doses$rows, plate_layout$doses$columns]
+        cat("Missing necessary elements in layout:\n")
+        print(check)
+        return(FALSE)
     }
-
-    neg_ctrl <- mean(as.matrix(plate[plate_layout$neg_ctrl$rows, plate_layout$neg_ctrl$columns]))
-    background <- mean(as.matrix(plate[plate_layout$background$rows, plate_layout$background$columns]))
-
-    intensity_norm <- intensities - background
-    intensity_mean <- colMeans(intensity_norm)
-    intensity_se <- apply(intensity_norm, 2, function(col) sd(col) / sqrt(length(col)))
-    intensity_norm_percmax <- (intensity_mean / neg_ctrl) * 100
-
-    df <- data.frame(
-        doses = get_halflog_doses(top_dose = 30, n_steps = 0:11),
-        log_doses = log(get_halflog_doses(top_dose = 30, n_steps = 0:11)),
-        norm_intensity_mean = intensity_mean,
-        norm_intensity_se = intensity_se,
-        norm_intensity_percmax = intensity_norm_percmax
-    )
 }
 
-path <- "data/290524_n=2_EFO21.xlsx"
-plate <- format_standard_xl(path)
-print(plate)
+# read in standardised layout spreadsheet from path
+read_plate_layout <- function(path = "plate_layout.xlsx") {
+    layout <- readxl::read_excel(path, sheet = "layout")
+    concs <- readxl::read_excel(path, sheet = "concs")
 
-efo1 <- process_plate(
-    plate = format_standard_xl("data/270524_EFO21_n=1.xlsx"),
-    plate_layout = plate_layout_v1()
-)
+    layout_df <- as.data.frame(layout)[, -1]
+    rownames(layout_df) <- layout[[1]]
 
-efo2 <- process_plate(
-    plate = format_standard_xl("data/290524_n=2_RMGI.xlsx"),
-    plate_layout = plate_layout_v1()
-)
+    stopifnot(check_plate_layout(layout_df))
 
-res <- rbind(efo1, efo2)
+    concs_df <- as.data.frame(concs)[, -1]
+    rownames(concs_df) <- concs[[1]]
 
-plot(
-    x = res$doses,
-    y = res$norm_intensity_percmax,
-    ylim = c(0, 100),
-    log = "x"
-)
+    return(list(layout_df, concs_df))
+}
 
-model <- drm(norm_intensity_percmax ~ doses, data = res, fct = LL.4())
+# mark concentrations for exclusion from data.frame
+# exclude should be an integer or vector of integers, bottom dose is 1
+# returns data.frame with exclude column containing 'exclude' flag
+exclude_concentrations <- function(df, exclude) {
+    # Ensure 'concs' column exists
+    if (!"concs" %in% names(df)) {
+        stop("Data frame must contain a 'concs' column.")
+    }
 
-plot_drc <- function(processed_plate, model, xlab = 'dose', ylab = 'normalised response') {
-    preds = as.data.frame(predict(model, newdata = processed_plate, interval = 'confidence'))
-    
+    if (!is.null(exclude)) {
+        df$exclude <- if_else(1:nrow(df) %in% exclude, "exclude", NA)
+    } else {
+        df$exclude <- NA
+    }
+
+    return(df)
+}
+
+# Normalise intensities from viability assay given plate_layout and path
+# Args:
+# - path: Excel spreadsheet generated from SparkControl, see format_standard_xl for details
+# - plate_layout: optional, path to Excel spreadsheet with layout and concentrations, see read_plate_layout for details
+# - exclude: optional, concentration ranges to be excluded, increasing order only, list of vectors (list(c(3,5), c(15,20)))
+# Returns:
+# - df: data.frame of concs, normalised treatment intensities
+process_plate <- function(path, plate_layout = NULL, exclude = NULL) {
+    r <- if (!is.null(plate_layout)) read_plate_layout(plate_layout) else read_plate_layout()
+
+    layout <- r[[1]]
+    concs <- r[[2]]
+    intensity <- format_standard_xl(path)
+
+    intensity_lst <- list()
+    conc_lst <- list()
+    for (i in 1:nrow(layout)) {
+        for (j in 1:ncol(layout)) {
+            l <- layout[i, j]
+            c <- concs[i, j]
+            intens <- intensity[i, j]
+
+            intensity_lst[[l]] <- c(intensity_lst[[l]], intens)
+            if (grepl("trt", l)) {
+                conc_lst[[l]] <- c(conc_lst[[l]], as.numeric(c))
+            }
+        }
+    }
+
+    # check all concentrations are identical for all repeats, merge
+    all_ident <- all(sapply(conc_lst[-1], function(x) identical(conc_lst[[1]], x)))
+    if (!all_ident) stop("Concentrations are not the same for all repeats, check layout.")
+    concs_merged <- conc_lst[[1]]
+
+    # take means of neg ctrls and backgrounds
+    bckgrnd <- mean(intensity_lst[["bckgrnd"]])
+    neg_ctrl <- mean(intensity_lst[["neg_ctrl"]]) - bckgrnd
+
+    # normalise treatment intensities
+    trt_int <- sapply(intensity_lst[grepl("trt", names(intensity_lst))], function(x) x - bckgrnd)
+    trt_int_mean <- rowMeans(trt_int)
+    trt_int_se <- apply(trt_int, 1, function(row) sd(row) / sqrt(length(row)))
+    trt_int_norm_percmax <- (trt_int_mean / neg_ctrl) * 100
+
     df <- data.frame(
-        dose = processed_plate$doses,
-        response = processed_plate$norm_intensity_percmax,
-        model = preds$Prediction,
+        concs = concs_merged,
+        log_concs = log(concs_merged),
+        trt_int_mean = trt_int_mean,
+        trt_int_se = trt_int_se,
+        trt_int_norm_percmax = trt_int_norm_percmax
+    )
+
+    df <- exclude_concentrations(df, exclude)
+
+    return(df)
+}
+
+# Returns ggplot given a processed plate dataframe, with log conc on x and norm intensity on y
+# Args:
+# - processed_plate: data.frame from `process_plate()`
+# - model: drc model object, for plotting model fit on ggplot
+plot_drc <- function(processed_plate, model = NULL, exclude = FALSE, xlabs = "concs", ylabs = "normalised response") {
+    if (!is.null(model)) {
+        newdata_df = data.frame(
+            concs = 10^seq(log10(max(processed_plate$concs)), log10(min(processed_plate$concs)), length.out = 200)
+        )
+        preds <- as.data.frame(predict(model, newdata = newdata_df, interval = "confidence"))
+        preds$concs = newdata_df$concs
+    } else {
+        newdata_df = processed_plate
+    }
+
+    if (exclude) {
+        processed_plate <- processed_plate[is.na(processed_plate$exclude), ]
+    } 
+
+    df_points <- data.frame(
+        concs = processed_plate$concs,
+        response = processed_plate$trt_int_norm_percmax
+    )
+
+    df_drc = data.frame(
+        concs = preds$concs,
+        preds = preds$Prediction,
         lwr = preds$Lower,
         upr = preds$Upper
     )
 
-    y_max <- max(c(100, unlist(as.vector(df[,2:ncol(df)]))))
-    y_min = min(c(0, unlist(as.vector(df[,2:ncol(df)]))))
+    y_max <- max(c(100, unlist(as.vector(df_drc))))
+    y_min <- min(c(0, unlist(as.vector(df_drc))))
 
-    g = ggplot(
-        df,
+    g <- ggplot(
+        df_points,
         aes(
-            x = dose,
+            x = concs,
             y = response
         )
     ) +
         geom_point() +
-        geom_line(aes(y = model), color = 'red') +
-        geom_ribbon(aes(ymin=lwr,ymax=upr), alpha=0.5, fill = 'lightblue') +
+        geom_line(data = df_drc, aes(x = concs, y = preds), color = "red", inherit.aes = F) +
+        geom_ribbon(data = df_drc, aes(x = concs, y = preds, ymin = lwr, ymax = upr), alpha = 0.5, fill = "lightblue", inherit.aes = T) +
         scale_x_continuous(trans = "log10") +
-        ylim(c(y_min, y_max)) +
+        scale_y_continuous(limits = c(y_min, y_max), breaks = seq(from = ceiling(y_min / 25) * 25, to = floor(y_max / 25) * 25, by = 25)) + 
         theme_bw() +
-        labs(x = xlab,
-        y = ylab)
+        labs(
+            x = xlabs,
+            y = ylabs
+        )
     return(g)
 }
 
-plot_drc(res, model)
+# process model to get statistics (e.g. AIC, MSE) etc
+process_model <- function(model) {
+    summary <- summary(model)
+    aic <- AIC(model)
+    resid <- residuals(model)
+    ssr <- sum(resid^2)
+    mse <- 1 / length(resid) * ssr
+    return(list(
+        model = model,
+        summary = summary,
+        aic = aic,
+        resid = resid,
+        ssr = ssr,
+        mse = mse
+    ))
+}
+
+# main ----
+
+OUT_PATH <- "figures/"
+
+## OVISE pre-test
+ovi <- process_plate(path = "data/270524_OVISE_n=1.xlsx")
+
+model <- drm(trt_int_norm_percmax ~ concs, data = ovi, fct = LL.4())
+processed_model <- process_model(model)
+
+plot_drc(
+    processed_plate = ovi, 
+    model = processed_model$model,
+    exclude = TRUE)
+
+## RMGI pre-test
+rmg <- process_plate(path = "data/270524_RMGI_n=1.xlsx")
+
+model <- drm(trt_int_norm_percmax ~ concs, data = rmg, fct = LL.4())
+processed_model <- process_model(model)
+
+plot_drc(rmg, processed_model$model, exclude = TRUE)
+
+## EFO21 early 2024
+path <- "data/290524_n=2_EFO21.xlsx"
+efo1 <- process_plate(path = path, exclude = 5)
+path <- "data/270524_EFO21_n=1.xlsx"
+efo2 <- process_plate(path = path, exclude = NULL)
+res <- rbind(efo1, efo2)
+
+model <- drm(trt_int_norm_percmax ~ concs, data = res, fct = LL.4())
+
+plot_drc(res, model, exclude = TRUE)
+
+## RMGI early 2024
+rmg1 = process_plate(path = "data/270524_RMGI_n=1.xlsx")
+rmg2 = process_plate(path = "data/290524_n=2_RMGI.xlsx", exclude = 5)
+
+res <- rbind(rmg1, rmg2)
+model <- drm(trt_int_norm_percmax ~ concs, data = res, fct = LL.4())
+plot_drc(res, model, exclude = TRUE)
+
+## OVISE early 2024
+ovi1 <- process_plate(path = "data/270524_OVISE_n=1.xlsx")
+ovi2 <- process_plate(path = "data/290524_n=2_OVISE.xlsx")
+
+res <- rbind(ovi1, ovi2)
+
+model <- drm(trt_int_norm_percmax ~ concs, data = res, fct = LL.4())
+processed_model <- process_model(model)
+
+plot_drc(res, processed_model$model, exclude = TRUE) # WONT RUN BC OF NAs

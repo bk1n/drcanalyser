@@ -137,35 +137,45 @@ process_plate <- function(path, plate_layout = NULL, exclude = NULL) {
 # Args:
 # - processed_plate: data.frame from `process_plate()`
 # - model: drc model object, for plotting model fit on ggplot
-plot_drc <- function(processed_plate, model = NULL, exclude = FALSE, xlabs = "concs", ylabs = "normalised response") {
+# - units: one of 'uM', 'nM', defaults to 'uM', set to NULL for no units
+plot_drc <- function(
+    processed_plate,
+    model = NULL,
+    exclude = FALSE,
+    xlabs = "Concentration", 
+    units = "uM",
+    ylabs = "Normalised Response (%)"
+    ) {
     if (!is.null(model)) {
-        newdata_df = data.frame(
+        newdata_df <- data.frame(
             concs = 10^seq(log10(max(processed_plate$concs)), log10(min(processed_plate$concs)), length.out = 200)
         )
         preds <- as.data.frame(predict(model, newdata = newdata_df, interval = "confidence"))
-        preds$concs = newdata_df$concs
+        preds$concs <- newdata_df$concs
     } else {
-        newdata_df = processed_plate
+        newdata_df <- processed_plate
     }
 
     if (exclude) {
         processed_plate <- processed_plate[is.na(processed_plate$exclude), ]
-    } 
+    }
 
     df_points <- data.frame(
         concs = processed_plate$concs,
         response = processed_plate$trt_int_norm_percmax
     )
 
-    df_drc = data.frame(
+    df_drc <- data.frame(
         concs = preds$concs,
         preds = preds$Prediction,
         lwr = preds$Lower,
         upr = preds$Upper
     )
 
-    y_max <- max(c(100, unlist(as.vector(df_drc))))
-    y_min <- min(c(0, unlist(as.vector(df_drc))))
+    y_max <- max(c(100, unlist(as.vector(df_drc))), na.rm = T)
+    y_min <- min(c(0, unlist(as.vector(df_drc))), na.rm = T)
+
+    xlabs = if(!is.null(units)) paste0(xlabs, ' (', units, ')') else xlabs
 
     g <- ggplot(
         df_points,
@@ -178,7 +188,7 @@ plot_drc <- function(processed_plate, model = NULL, exclude = FALSE, xlabs = "co
         geom_line(data = df_drc, aes(x = concs, y = preds), color = "red", inherit.aes = F) +
         geom_ribbon(data = df_drc, aes(x = concs, y = preds, ymin = lwr, ymax = upr), alpha = 0.5, fill = "lightblue", inherit.aes = T) +
         scale_x_continuous(trans = "log10") +
-        scale_y_continuous(limits = c(y_min, y_max), breaks = seq(from = ceiling(y_min / 25) * 25, to = floor(y_max / 25) * 25, by = 25)) + 
+        scale_y_continuous(limits = c(y_min, y_max), breaks = seq(from = ceiling(y_min / 25) * 25, to = floor(y_max / 25) * 25, by = 25)) +
         theme_bw() +
         labs(
             x = xlabs,
@@ -208,24 +218,25 @@ process_model <- function(model) {
 
 OUT_PATH <- "figures/"
 
-## OVISE pre-test
-ovi <- process_plate(path = "data/270524_OVISE_n=1.xlsx")
+# ## OVISE pre-test
+# ovi <- process_plate(path = "data/270524_OVISE_n=1.xlsx")
 
-model <- drm(trt_int_norm_percmax ~ concs, data = ovi, fct = LL.4())
-processed_model <- process_model(model)
+# model <- drm(trt_int_norm_percmax ~ concs, data = ovi, fct = LL.4())
+# processed_model <- process_model(model)
 
-plot_drc(
-    processed_plate = ovi, 
-    model = processed_model$model,
-    exclude = TRUE)
+# plot_drc(
+#     processed_plate = ovi,
+#     model = processed_model$model,
+#     exclude = TRUE
+# )
 
-## RMGI pre-test
-rmg <- process_plate(path = "data/270524_RMGI_n=1.xlsx")
+# ## RMGI pre-test
+# rmg <- process_plate(path = "data/270524_RMGI_n=1.xlsx")
 
-model <- drm(trt_int_norm_percmax ~ concs, data = rmg, fct = LL.4())
-processed_model <- process_model(model)
+# model <- drm(trt_int_norm_percmax ~ concs, data = rmg, fct = LL.4())
+# processed_model <- process_model(model)
 
-plot_drc(rmg, processed_model$model, exclude = TRUE)
+# plot_drc(rmg, processed_model$model, exclude = TRUE)
 
 ## EFO21 early 2024
 path <- "data/290524_n=2_EFO21.xlsx"
@@ -235,16 +246,19 @@ efo2 <- process_plate(path = path, exclude = NULL)
 res <- rbind(efo1, efo2)
 
 model <- drm(trt_int_norm_percmax ~ concs, data = res, fct = LL.4())
+g <- plot_drc(res, model, exclude = TRUE)
 
-plot_drc(res, model, exclude = TRUE)
+ggsave(paste0(OUT_PATH, "290524_EFO21.png"), g, width = 6, height = 6, units = "in")
 
 ## RMGI early 2024
-rmg1 = process_plate(path = "data/270524_RMGI_n=1.xlsx")
-rmg2 = process_plate(path = "data/290524_n=2_RMGI.xlsx", exclude = 5)
-
+rmg1 <- process_plate(path = "data/270524_RMGI_n=1.xlsx")
+rmg2 <- process_plate(path = "data/290524_n=2_RMGI.xlsx", exclude = 5)
 res <- rbind(rmg1, rmg2)
+
 model <- drm(trt_int_norm_percmax ~ concs, data = res, fct = LL.4())
-plot_drc(res, model, exclude = TRUE)
+g <- plot_drc(res, model, exclude = TRUE)
+
+ggsave(paste0(OUT_PATH, "290524_RMGI.png"), g, width = 6, height = 6, units = "in")
 
 ## OVISE early 2024
 ovi1 <- process_plate(path = "data/270524_OVISE_n=1.xlsx")
@@ -255,4 +269,5 @@ res <- rbind(ovi1, ovi2)
 model <- drm(trt_int_norm_percmax ~ concs, data = res, fct = LL.4())
 processed_model <- process_model(model)
 
-plot_drc(res, processed_model$model, exclude = TRUE) # WONT RUN BC OF NAs
+g <- plot_drc(res, processed_model$model, exclude = TRUE)
+ggsave(paste0(OUT_PATH, "290524_OVISE.png"), g, width = 6, height = 6, units = "in")

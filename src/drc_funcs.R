@@ -47,6 +47,16 @@ read_plate_layout <- function(path = "plate_layout.xlsx") {
     layout <- readxl::read_excel(path, sheet = "layout")
     concs <- readxl::read_excel(path, sheet = "concs")
 
+    gi50 <- tryCatch(
+        {
+            gi50 <- readxl::read_excel(path, sheet = "gi50")
+        },
+        error = function(e) {
+            message("gi50 not available: \n", e)
+            return(NULL)
+        }
+    )
+
     layout_df <- as.data.frame(layout)[, -1]
     rownames(layout_df) <- layout[[1]]
 
@@ -55,7 +65,14 @@ read_plate_layout <- function(path = "plate_layout.xlsx") {
     concs_df <- as.data.frame(concs)[, -1]
     rownames(concs_df) <- concs[[1]]
 
-    return(list(layout_df, concs_df))
+    if (!is.null(gi50)) {
+        gi50_df <- as.data.frame(gi50)[, -1]
+        rownames(gi50_df) <- gi50[[1]]
+    } else {
+        gi50_df <- NULL
+    }
+
+    return(list(layout = layout_df, concs = concs_df, gi50 = gi50_df))
 }
 
 # mark concentrations for exclusion from data.frame
@@ -78,29 +95,51 @@ exclude_concentrations <- function(df, exclude) {
 
 # Normalise intensities from viability assay given plate_layout and path
 # Args:
-# - path: Excel spreadsheet generated from SparkControl, see format_standard_xl for details
+# - main_path: Excel spreadsheet for the main treatment plate generated from SparkControl, see format_standard_xl for details
+# - gi50_path: if applicable, path to corresponding gi50 plate generated from SparkControl
 # - plate_layout: optional, path to Excel spreadsheet with layout and concentrations, see read_plate_layout for details
 # - exclude: optional, concentration ranges to be excluded, increasing order only, list of vectors (list(c(3,5), c(15,20)))
 # Returns:
 # - df: data.frame of concs, normalised treatment intensities
-process_plate <- function(path, plate_layout = NULL, exclude = NULL) {
+process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, exclude = NULL) {
     r <- if (!is.null(plate_layout)) read_plate_layout(plate_layout) else read_plate_layout()
 
-    layout <- r[[1]]
-    concs <- r[[2]]
-    intensity <- format_standard_xl(path)
+    layout <- r$layout
+    concs <- r$concs
+    gi50 <- r$gi50
 
+    incl_gi50 <- if (!is.null(gi50)) TRUE else FALSE
+    if (incl_gi50 & is.null(gi50)) stop("gi50_path supplied but gi50 is not included in plate layout!")
+
+    main_intensity <- format_standard_xl(main_path)
+    gi50_intensity <- if (incl_gi50) format_standard_xl(gi50_path) else NULL
+
+    # separate intensities into list of trt, neg_ctrl, bckgrnd
     intensity_lst <- list()
     conc_lst <- list()
     for (i in 1:nrow(layout)) {
         for (j in 1:ncol(layout)) {
             l <- layout[i, j]
             c <- concs[i, j]
-            intens <- intensity[i, j]
+            intens <- main_intensity[i, j]
 
             intensity_lst[[l]] <- c(intensity_lst[[l]], intens)
             if (grepl("trt", l)) {
                 conc_lst[[l]] <- c(conc_lst[[l]], as.numeric(c))
+            }
+        }
+    }
+
+    # convert gi50 into list
+    if (incl_gi50) {
+        for (i in 1:nrow(gi50)) {
+            for (j in 1:ncol(gi50)) {
+                l <- gi50[i, j]
+                intens <- gi50_intensity[i, j]
+
+                if (l == "gi50" & !is.na(l)) {
+                    intensity_lst[[l]] <- c(intensity_lst[[l]], intens)
+                }
             }
         }
     }
@@ -111,11 +150,17 @@ process_plate <- function(path, plate_layout = NULL, exclude = NULL) {
     concs_merged <- conc_lst[[1]]
 
     # take means of neg ctrls and backgrounds
+    mean_gi50 <- if (incl_gi50) mean(intensity_lst$gi50) else NULL
+
     bckgrnd <- mean(intensity_lst[["bckgrnd"]])
-    neg_ctrl <- mean(intensity_lst[["neg_ctrl"]]) - bckgrnd
+    neg_ctrl <- if (incl_gi50) mean(intensity_lst[["neg_ctrl"]]) - mean_gi50 - bckgrnd else mean(intensity_lst[["neg_ctrl"]]) - bckgrnd
 
     # normalise treatment intensities
-    trt_int <- sapply(intensity_lst[grepl("trt", names(intensity_lst))], function(x) x - bckgrnd)
+    if (incl_gi50) {
+        trt_int <- sapply(intensity_lst[grepl("trt", names(intensity_lst))], function(x) x - mean_gi50 - bckgrnd)
+    } else {
+        trt_int <- sapply(intensity_lst[grepl("trt", names(intensity_lst))], function(x) x - bckgrnd)
+    }
     trt_int_mean <- rowMeans(trt_int)
     trt_int_se <- apply(trt_int, 1, function(row) sd(row) / sqrt(length(row)))
     trt_int_norm_percmax <- (trt_int_mean / neg_ctrl) * 100
@@ -130,6 +175,8 @@ process_plate <- function(path, plate_layout = NULL, exclude = NULL) {
 
     df <- exclude_concentrations(df, exclude)
 
+    if (incl_gi50) cat("Returning GI50\n") else cat("Returning IC50\n")
+
     return(df)
 }
 
@@ -143,14 +190,23 @@ plot_drc <- function(
     model = NULL,
     exclude = FALSE,
     xlabs = "Concentration",
-    units = "uM",
-    ylabs = "Normalised Response (%)") {
+    units = "µM",
+    ylabs = "Normalised Response (%)",
+    stat_type = "GI50",
+    title = NULL) {
     if (!is.null(model)) {
+        # plot model fit
         newdata_df <- data.frame(
             concs = 10^seq(log10(max(processed_plate$concs)), log10(min(processed_plate$concs)), length.out = 200)
         )
         preds <- as.data.frame(predict(model, newdata = newdata_df, interval = "confidence"))
         preds$concs <- newdata_df$concs
+
+        # get gi50 / ic50
+        stat <- as.data.frame(drc::ED(model, respLev = c(10, 50, 90)))
+        stat$levels <- if (stat_type == "GI50") c("GI[10]", "GI[50]", "GI[90]") else c("IC[10]", "IC[50]", "IC[90]")
+        stat$y <- c(100, 90, 80)
+        stat$label <- paste0(stat$levels, " ", "==", " '", signif(stat$Estimate, 3), units, "'")
     } else {
         newdata_df <- processed_plate
     }
@@ -192,7 +248,9 @@ plot_drc <- function(
         labs(
             x = xlabs,
             y = ylabs
-        )
+        ) +
+        geom_text(data = stat, aes(x = max(processed_plate$concs), y = y, label = label), vjust = 0, hjust = 1, parse = T) +
+        ggtitle(title)
     return(g)
 }
 
@@ -212,61 +270,3 @@ process_model <- function(model) {
         mse = mse
     ))
 }
-
-# main ----
-
-OUT_PATH <- "figures/"
-
-# ## OVISE pre-test
-# ovi <- process_plate(path = "data/270524_OVISE_n=1.xlsx")
-
-# model <- drm(trt_int_norm_percmax ~ concs, data = ovi, fct = LL.4())
-# processed_model <- process_model(model)
-
-# plot_drc(
-#     processed_plate = ovi,
-#     model = processed_model$model,
-#     exclude = TRUE
-# )
-
-# ## RMGI pre-test
-# rmg <- process_plate(path = "data/270524_RMGI_n=1.xlsx")
-
-# model <- drm(trt_int_norm_percmax ~ concs, data = rmg, fct = LL.4())
-# processed_model <- process_model(model)
-
-# plot_drc(rmg, processed_model$model, exclude = TRUE)
-
-## EFO21 early 2024, eCF506, n=2
-path <- "data/290524_n=2_EFO21.xlsx"
-efo1 <- process_plate(path = path, exclude = 5)
-path <- "data/270524_EFO21_n=1.xlsx"
-efo2 <- process_plate(path = path, exclude = NULL)
-res <- rbind(efo1, efo2)
-
-model <- drm(trt_int_norm_percmax ~ concs, data = res, fct = LL.4())
-g <- plot_drc(res, model, exclude = TRUE)
-
-ggsave(paste0(OUT_PATH, "290524_EFO21.png"), g, width = 6, height = 6, units = "in")
-
-## RMGI early 2024, eCF506, n=2
-rmg1 <- process_plate(path = "data/270524_RMGI_n=1.xlsx")
-rmg2 <- process_plate(path = "data/290524_n=2_RMGI.xlsx", exclude = 5)
-res <- rbind(rmg1, rmg2)
-
-model <- drm(trt_int_norm_percmax ~ concs, data = res, fct = LL.4())
-g <- plot_drc(res, model, exclude = TRUE)
-
-ggsave(paste0(OUT_PATH, "290524_RMGI.png"), g, width = 6, height = 6, units = "in")
-
-## OVISE early 2024, eCF506, n=2
-ovi1 <- process_plate(path = "data/270524_OVISE_n=1.xlsx")
-ovi2 <- process_plate(path = "data/290524_n=2_OVISE.xlsx")
-
-res <- rbind(ovi1, ovi2)
-
-model <- drm(trt_int_norm_percmax ~ concs, data = res, fct = LL.4())
-processed_model <- process_model(model)
-
-g <- plot_drc(res, processed_model$model, exclude = TRUE)
-ggsave(paste0(OUT_PATH, "290524_OVISE.png"), g, width = 6, height = 6, units = "in")

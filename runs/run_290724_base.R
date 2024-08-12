@@ -36,7 +36,7 @@ rmg_pp <- process_plates(rmg, assay_id = "RMGI")
 
 # plot all
 processed_plates <- list(efo_pp, rmg_pp)
-g <- plot_drc(processed_plates)
+g <- plot_drc(processed_plates, ylabs = "Growth Inhibition (%)")
 
 # save results
 save_results(g, save_folder = "figures/290724_base")

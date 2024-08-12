@@ -223,7 +223,7 @@ get_model_stats <- function(
 plot_drc <- function(processed_plates,
                      exclude = FALSE,
                      xlabs = "Concentration",
-                     ylabs = "Normalised Response (%)",
+                     ylabs = if(stat_type == 'GI50') "Growth Inhibition (%)" else "Normalised Response (%)",
                      units = "µM",
                      plate_legend_name = "Assay ID",
                      stat_type = "GI50",
@@ -270,7 +270,7 @@ plot_drc <- function(processed_plates,
 
         stats <- dplyr::relocate(stats, assay_id, levels, GI50, std_error, units)
 
-        rownames(stats) = NULL
+        rownames(stats) <- NULL
 
         return(stats)
     }

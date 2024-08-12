@@ -43,7 +43,7 @@ check_plate_layout <- function(layout) {
 }
 
 # read in standardised layout spreadsheet from path
-read_plate_layout <- function(path = "plate_layout.xlsx") {
+read_plate_layout <- function(path) {
     layout <- readxl::read_excel(path, sheet = "layout")
     concs <- readxl::read_excel(path, sheet = "concs")
 
@@ -75,22 +75,12 @@ read_plate_layout <- function(path = "plate_layout.xlsx") {
     return(list(layout = layout_df, concs = concs_df, gi50 = gi50_df))
 }
 
-# mark concentrations for exclusion from data.frame
-# exclude should be an integer or vector of integers, bottom dose is 1
-# returns data.frame with exclude column containing 'exclude' flag
-exclude_concentrations <- function(df, exclude) {
-    # Ensure 'concs' column exists
-    if (!"concs" %in% names(df)) {
-        stop("Data frame must contain a 'concs' column.")
+# removes concentrations from layout
+exclude_concentrations <- function(layout, exclude) {
+    for (ex in exclude) {
+        layout[ex[1], ex[2]] <- paste0(layout[ex[1], ex[2]], "exclude")
     }
-
-    if (!is.null(exclude)) {
-        df$exclude <- if_else(1:nrow(df) %in% exclude, "exclude", NA)
-    } else {
-        df$exclude <- NA
-    }
-
-    return(df)
+    return(layout)
 }
 
 # Normalise intensities from viability assay given plate_layout and path
@@ -98,13 +88,13 @@ exclude_concentrations <- function(df, exclude) {
 # - main_path: Excel spreadsheet for the main treatment plate generated from SparkControl, see format_standard_xl for details
 # - gi50_path: if applicable, path to corresponding gi50 plate generated from SparkControl
 # - plate_layout: optional, path to Excel spreadsheet with layout and concentrations, see read_plate_layout for details
-# - exclude: optional, concentration ranges to be excluded, increasing order only, list of vectors (list(c(3,5), c(15,20)))
+# - exclude: optional, wells to exclude as list of vector of rows, columns e.g. list(c('A', 1))
 # Returns:
 # - df: data.frame of concs, normalised treatment intensities
 process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, exclude = NULL) {
-    r <- if (!is.null(plate_layout)) read_plate_layout(plate_layout) else read_plate_layout()
+    r <- if (!is.null(plate_layout)) read_plate_layout(plate_layout) else if (!is.null(gi50_path)) read_plate_layout(path = "plate_layout_gi50.xlsx") else read_plate_layout(path = "plate_layout_ic50.xlsx")
 
-    layout <- r$layout
+    layout <- if (!is.null(exclude)) exclude_concentrations(r$layout, exclude) else r$layout
     concs <- r$concs
     gi50 <- r$gi50
 
@@ -113,6 +103,13 @@ process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, excl
 
     main_intensity <- format_standard_xl(main_path)
     gi50_intensity <- if (incl_gi50) format_standard_xl(gi50_path) else NULL
+
+    cat("Main intensity:\n")
+    print(main_intensity)
+    cat("\n")
+    cat("GI50 intensity:\n")
+    print(gi50_intensity)
+    cat("\n")
 
     # separate intensities into list of trt, neg_ctrl, bckgrnd
     intensity_lst <- list()
@@ -123,9 +120,17 @@ process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, excl
             c <- concs[i, j]
             intens <- main_intensity[i, j]
 
-            intensity_lst[[l]] <- c(intensity_lst[[l]], intens)
             if (grepl("trt", l)) {
-                conc_lst[[l]] <- c(conc_lst[[l]], as.numeric(c))
+                if (grepl("exclude", l)) {
+                    l <- gsub("exclude", "", l)
+                    conc_lst[[l]] <- c(conc_lst[[l]], NA)
+                    intensity_lst[[l]] <- c(intensity_lst[[l]], NA)
+                } else {
+                    conc_lst[[l]] <- c(conc_lst[[l]], as.numeric(c))
+                    intensity_lst[[l]] <- c(intensity_lst[[l]], intens)
+                }
+            } else {
+                intensity_lst[[l]] <- c(intensity_lst[[l]], intens)
             }
         }
     }
@@ -144,10 +149,9 @@ process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, excl
         }
     }
 
-    # check all concentrations are identical for all repeats, merge
-    all_ident <- all(sapply(conc_lst[-1], function(x) identical(conc_lst[[1]], x)))
-    if (!all_ident) stop("Concentrations are not the same for all repeats, check layout.")
-    concs_merged <- conc_lst[[1]]
+    cat("Processed intensities:\n")
+    print(intensity_lst)
+    cat("\n")
 
     # take means of neg ctrls and backgrounds
     mean_gi50 <- if (incl_gi50) mean(intensity_lst$gi50) else NULL
@@ -161,19 +165,18 @@ process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, excl
     } else {
         trt_int <- sapply(intensity_lst[grepl("trt", names(intensity_lst))], function(x) x - bckgrnd)
     }
-    trt_int_mean <- rowMeans(trt_int)
-    trt_int_se <- apply(trt_int, 1, function(row) sd(row) / sqrt(length(row)))
+    trt_int_mean <- rowMeans(trt_int, na.rm = T)
+    trt_int_se <- apply(trt_int, 1, function(row) sd(row, na.rm = T) / sqrt(length(row)))
     trt_int_norm_percmax <- (trt_int_mean / neg_ctrl) * 100
 
     df <- data.frame(
-        concs = concs_merged,
+        concs = unique(unlist(concs_merged)),
         log_concs = log(concs_merged),
         trt_int_mean = trt_int_mean,
         trt_int_se = trt_int_se,
-        trt_int_norm_percmax = trt_int_norm_percmax
+        trt_int_norm_percmax = trt_int_norm_percmax,
+        mean_gi50 = mean_gi50
     )
-
-    df <- exclude_concentrations(df, exclude)
 
     if (incl_gi50) cat("Returning GI50\n") else cat("Returning IC50\n")
 
@@ -189,10 +192,8 @@ process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, excl
 process_plates <- function(path_list, assay_id = NULL) {
     all_plates <- lapply(path_list, function(p) {
         main_path <- if ("main_path" %in% names(p)) p$main_path else stop("Main path must be supplied!")
-        gi50_path <- if ("gi50_path" %in% names(p)) p$gi50_path else NULL
-        plate_layout <- if ("plate_layout" %in% names(p)) p$plate_layout else NULL
 
-        plate <- process_plate(main_path = main_path, gi50_path = gi50_path, plate_layout = plate_layout)
+        plate <- do.call(process_plate, p)
         return(plate)
     })
     all_plates <- do.call(rbind, all_plates)
@@ -221,9 +222,8 @@ get_model_stats <- function(
 # - units: one of 'uM', 'nM', defaults to 'uM', set to NULL for no units
 # - plate_legend_name: controls name of legend for assay_id
 plot_drc <- function(processed_plates,
-                     exclude = FALSE,
                      xlabs = "Concentration",
-                     ylabs = if(stat_type == 'GI50') "Growth Inhibition (%)" else "Normalised Response (%)",
+                     ylabs = if (stat_type == "GI50") "Growth Inhibition (%)" else "Normalised Response (%)",
                      units = "µM",
                      plate_legend_name = "Assay ID",
                      stat_type = "GI50",
@@ -250,7 +250,6 @@ plot_drc <- function(processed_plates,
         df <- data.frame(
             concs = plate$concs,
             response = plate$trt_int_norm_percmax,
-            exclude = plate$exclude,
             assay_id = unique(plate$assay_id)
         )
         return(df)
@@ -277,10 +276,7 @@ plot_drc <- function(processed_plates,
     stats <- lapply(processed_plates, get_model_stats_)
     stats <- do.call(rbind, stats)
 
-    if (exclude) {
-        df_points <- df_points[is.na(df_points$exclude), ]
-    }
-
+    # plot
     y_max <- max(c(df_points$response, 100, drcs$Upper, drcs$Prediction), na.rm = T)
     y_min <- min(c(df_points$response, 0, drcs$Lower, drcs$Prediction), na.rm = T)
 

@@ -180,55 +180,109 @@ process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, excl
     return(df)
 }
 
+# wrapper for process_plates, for processing lists of plates
+# Args:
+# - path_list: list of lists, containing path information for the plates. In it's most basic form, list(list(main_path = ''), list(main_path = '')))
+# - assay_id: optional, appends assay_id to the return processed_plate
+# Returns:
+# - list containing processed_plate, model
+process_plates <- function(path_list, assay_id = NULL) {
+    all_plates <- lapply(path_list, function(p) {
+        main_path <- if ("main_path" %in% names(p)) p$main_path else stop("Main path must be supplied!")
+        gi50_path <- if ("gi50_path" %in% names(p)) p$gi50_path else NULL
+        plate_layout <- if ("plate_layout" %in% names(p)) p$plate_layout else NULL
+
+        plate <- process_plate(main_path = main_path, gi50_path = gi50_path, plate_layout = plate_layout)
+        return(plate)
+    })
+    all_plates <- do.call(rbind, all_plates)
+
+    if (!is.null(assay_id)) all_plates$assay_id <- assay_id
+
+    model <- drm(trt_int_norm_percmax ~ concs, data = all_plates, fct = LL.4())
+    return(list(
+        plate = all_plates,
+        model = model
+    ))
+}
+
+# gets stats from model, i.e. IC50, GI50, etc
+get_model_stats <- function(
+    model,
+    units = "uM",
+    stat_type = "GI50") {
+    # get gi50 / ic50
+    return(stat)
+}
+
 # Returns ggplot given a processed plate dataframe, with log conc on x and norm intensity on y
 # Args:
-# - processed_plate: data.frame from `process_plate()`
-# - model: drc model object, for plotting model fit on ggplot
+# - processed_plates: list of processed_plate(s) from process_plates()
 # - units: one of 'uM', 'nM', defaults to 'uM', set to NULL for no units
-plot_drc <- function(
-    processed_plate,
-    model = NULL,
-    exclude = FALSE,
-    xlabs = "Concentration",
-    units = "µM",
-    ylabs = "Normalised Response (%)",
-    stat_type = "GI50",
-    title = NULL) {
-    if (!is.null(model)) {
-        # plot model fit
+# - plate_legend_name: controls name of legend for assay_id
+plot_drc <- function(processed_plates,
+                     exclude = FALSE,
+                     xlabs = "Concentration",
+                     ylabs = "Normalised Response (%)",
+                     units = "µM",
+                     plate_legend_name = "Assay ID",
+                     stat_type = "GI50",
+                     title = NULL) {
+    # returns simulated preds corresponding to model curve
+    get_model_curve_ <- function(processed_plate) {
+        plate <- processed_plate$plate
+        model <- processed_plate$model
+
         newdata_df <- data.frame(
-            concs = 10^seq(log10(max(processed_plate$concs)), log10(min(processed_plate$concs)), length.out = 200)
+            concs = 10^seq(log10(max(plate$concs)), log10(min(plate$concs)), length.out = 200)
         )
         preds <- as.data.frame(predict(model, newdata = newdata_df, interval = "confidence"))
         preds$concs <- newdata_df$concs
-
-        # get gi50 / ic50
-        stat <- as.data.frame(drc::ED(model, respLev = c(10, 50, 90)))
-        stat$levels <- if (stat_type == "GI50") c("GI[10]", "GI[50]", "GI[90]") else c("IC[10]", "IC[50]", "IC[90]")
-        stat$y <- c(100, 90, 80)
-        stat$label <- paste0(stat$levels, " ", "==", " '", signif(stat$Estimate, 3), units, "'")
-    } else {
-        newdata_df <- processed_plate
+        preds$assay_id <- unique(plate$assay_id)
+        return(preds)
     }
+    drcs <- lapply(processed_plates, get_model_curve_)
+    drcs <- do.call(rbind, drcs)
+
+    # get raw data points
+    get_data_points_ <- function(processed_plate) {
+        plate <- processed_plate$plate
+        df <- data.frame(
+            concs = plate$concs,
+            response = plate$trt_int_norm_percmax,
+            exclude = plate$exclude,
+            assay_id = unique(plate$assay_id)
+        )
+        return(df)
+    }
+    df_points <- lapply(processed_plates, get_data_points_)
+    df_points <- do.call(rbind, df_points)
+
+    get_model_stats_ <- function(processed_plate) {
+        plate <- processed_plate$plate
+        model <- processed_plate$model
+
+        stats <- as.data.frame(drc::ED(model, respLev = c(10, 50, 90), display = F))
+        colnames(stats) <- c(stat_type, "std_error")
+        stats$levels <- rownames(stats)
+        stats$assay_id <- unique(plate$assay_id)
+        stats$units <- units
+
+        stats <- dplyr::relocate(stats, assay_id, levels, GI50, std_error, units)
+
+        rownames(stats) = NULL
+
+        return(stats)
+    }
+    stats <- lapply(processed_plates, get_model_stats_)
+    stats <- do.call(rbind, stats)
 
     if (exclude) {
-        processed_plate <- processed_plate[is.na(processed_plate$exclude), ]
+        df_points <- df_points[is.na(df_points$exclude), ]
     }
 
-    df_points <- data.frame(
-        concs = processed_plate$concs,
-        response = processed_plate$trt_int_norm_percmax
-    )
-
-    df_drc <- data.frame(
-        concs = preds$concs,
-        preds = preds$Prediction,
-        lwr = preds$Lower,
-        upr = preds$Upper
-    )
-
-    y_max <- max(c(100, unlist(as.vector(df_drc))), na.rm = T)
-    y_min <- min(c(0, unlist(as.vector(df_drc))), na.rm = T)
+    y_max <- max(c(df_points$response, 100, drcs$Upper, drcs$Prediction), na.rm = T)
+    y_min <- min(c(df_points$response, 0, drcs$Lower, drcs$Prediction), na.rm = T)
 
     xlabs <- if (!is.null(units)) paste0(xlabs, " (", units, ")") else xlabs
 
@@ -239,19 +293,25 @@ plot_drc <- function(
             y = response
         )
     ) +
-        geom_point() +
-        geom_line(data = df_drc, aes(x = concs, y = preds), color = "red", inherit.aes = F) +
-        geom_ribbon(data = df_drc, aes(x = concs, y = preds, ymin = lwr, ymax = upr), alpha = 0.5, fill = "lightblue", inherit.aes = T) +
+        geom_point(aes(shape = assay_id, color = assay_id)) +
+        geom_line(data = drcs, aes(x = concs, y = Prediction, color = assay_id), inherit.aes = F) +
+        geom_ribbon(data = drcs, aes(x = concs, y = Prediction, fill = assay_id, ymin = Upper, ymax = Lower), alpha = 0.1, inherit.aes = T) +
         scale_x_continuous(trans = "log10") +
         scale_y_continuous(limits = c(y_min, y_max), breaks = seq(from = ceiling(y_min / 25) * 25, to = floor(y_max / 25) * 25, by = 25)) +
         theme_bw() +
         labs(
             x = xlabs,
-            y = ylabs
+            y = ylabs,
+            color = plate_legend_name,
+            fill = plate_legend_name,
+            shape = plate_legend_name
         ) +
-        geom_text(data = stat, aes(x = max(processed_plate$concs), y = y, label = label), vjust = 0, hjust = 1, parse = T) +
         ggtitle(title)
-    return(g)
+
+    return(list(
+        plot = g,
+        stats = stats
+    ))
 }
 
 # process model to get statistics (e.g. AIC, MSE) etc
@@ -269,4 +329,32 @@ process_model <- function(model) {
         ssr = ssr,
         mse = mse
     ))
+}
+
+# saves plot and statistics to a folder
+# Args:
+# - plot_results: results from plot_drc() or list containing $plot and $stats slots
+# - save_folder: folder to save results
+# - append_file_name: string to append to end of filename before extension
+save_results <- function(plot_results, save_folder, append_file_name = NULL) {
+    plot <- plot_results$plot
+    stats <- plot_results$stats
+
+    append_file_name <- if (!is.null(append_file_name)) paste0("_", append_file_name) else NULL
+
+    fig_path <- paste0(save_folder, "/drc_plot", append_file_name, ".png")
+
+    cat("Saving plot to", fig_path, "\n")
+    ggsave(
+        fig_path,
+        plot,
+        width = 6,
+        height = 6,
+        units = "in",
+        dpi = 600
+    )
+
+    stat_path <- paste0(save_folder, "/drc_stats", append_file_name, ".csv")
+    cat("Saving stats to", stat_path, "\n")
+    write.csv(stats, stat_path, row.names = F)
 }

@@ -37,9 +37,8 @@ efo_ko <- process_plates(efo_ko, assay_id = "EFO21-KO")
 
 processed_plates <- list(efo_ctrl, efo_ko)
 plt <- plot_drc(processed_plates)
-plt$plot
-plt$stats
 
+save_results(plt, save_folder = "figures/050824_arid1ako", append_file_name = "EFO21")
 
 # RMGI
 rmg_ctrl <- list(
@@ -72,9 +71,5 @@ rmg_ko <- process_plates(rmg_ko, assay_id = "RMGI-KO")
 
 processed_plates <- list(rmg_ctrl, rmg_ko)
 plt <- plot_drc(processed_plates)
-plt$plot
 
-
-
-# save results
-save_results(g, save_folder = "figures/290724_base")
+save_results(plt, save_folder = "figures/050824_arid1ako", append_file_name = "RMGI")

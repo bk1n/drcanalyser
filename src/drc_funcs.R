@@ -169,9 +169,18 @@ process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, excl
     trt_int_se <- apply(trt_int, 1, function(row) sd(row, na.rm = T) / sqrt(length(row)))
     trt_int_norm_percmax <- (trt_int_mean / neg_ctrl) * 100
 
+    concs <- do.call(cbind, conc_lst)
+    concs <- apply(concs, 1, function(row) {
+        if (all(is.na(row))) {
+            return(NA)
+        } else {
+            return(row[1])
+        }
+    })
+
     df <- data.frame(
-        concs = unique(unlist(concs_merged)),
-        log_concs = log(concs_merged),
+        concs = concs,
+        log_concs = log(concs),
         trt_int_mean = trt_int_mean,
         trt_int_se = trt_int_se,
         trt_int_norm_percmax = trt_int_norm_percmax,
@@ -234,7 +243,7 @@ plot_drc <- function(processed_plates,
         model <- processed_plate$model
 
         newdata_df <- data.frame(
-            concs = 10^seq(log10(max(plate$concs)), log10(min(plate$concs)), length.out = 200)
+            concs = 10^seq(log10(max(plate$concs, na.rm = T)), log10(min(plate$concs, na.rm = T)), length.out = 200)
         )
         preds <- as.data.frame(predict(model, newdata = newdata_df, interval = "confidence"))
         preds$concs <- newdata_df$concs

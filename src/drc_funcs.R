@@ -247,7 +247,7 @@ process_plates <- function(path_list, assay_id = NULL) {
 
     if (!is.null(assay_id)) all_plates$assay_id <- assay_id
 
-    model <- drm(trt_int_norm_percmax ~ concs, data = all_plates, fct = LL.4())
+    model <- drm(trt_int_norm_percmax ~ concs, data = all_plates, fct = LL.3u(upper = 100))
     return(list(
         plate = all_plates,
         model = model
@@ -400,7 +400,7 @@ save_results <- function(plot_results, save_folder, append_file_name = NULL) {
 
     append_file_name <- if (!is.null(append_file_name)) paste0("_", append_file_name) else NULL
 
-    fig_path <- paste0(save_folder, "/drc_plot", append_file_name, ".png")
+    fig_path <- paste0(save_folder, "/drc_plot", append_file_name, ".svg")
 
     cat("Saving plot to", fig_path, "\n")
     ggsave(

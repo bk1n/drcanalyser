@@ -48,29 +48,8 @@ efo_ko_3 <- list(
     exclude = list(c("B", 2), c("C", 2), c("D", 2))
 )
 
-efo_ctrl <- process_plates(list(efo_ctrl_1, efo_ctrl_2, efo_ctrl_3), assay_id = "EFO21-Ctrl")
-
-# efo_ctrl_1 <- process_plates(list(efo_ctrl_1), assay_id = "EFO21-Ctrl")
-# efo_ctrl_2 <- process_plates(list(efo_ctrl_2), assay_id = "EFO21-Ctrl")
-# efo_ctrl_3 <- process_plates(list(efo_ctrl_3), assay_id = "EFO21-Ctrl")
-
-# save_results(plot_drc(list(efo_ctrl)), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_Ctrl_combined")
-# save_results(plot_drc(list(efo_ctrl), plot_mean = T), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_Ctrl_combined_mean")
-# save_results(plot_drc(list(efo_ctrl_1)), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_Ctrl_n1")
-# save_results(plot_drc(list(efo_ctrl_2)), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_Ctrl_n2")
-# save_results(plot_drc(list(efo_ctrl_3)), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_Ctrl_n3")
-
-efo_ko <- process_plates(list(efo_ko_1, efo_ko_2, efo_ko_3), assay_id = "EFO21-KO")
-
-# efo_ko_1 <- process_plates(list(efo_ko_1), assay_id = "EFO21-KO")
-# efo_ko_2 <- process_plates(list(efo_ko_2), assay_id = "EFO21-KO")
-# efo_ko_3 <- process_plates(list(efo_ko_3), assay_id = "EFO21-KO")
-
-# save_results(plot_drc(list(efo_ko)), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_KO_combined")
-# save_results(plot_drc(list(efo_ko), plot_mean = T), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_KO_combined_mean")
-# save_results(plot_drc(list(efo_ko_1)), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_KO_n1")
-# save_results(plot_drc(list(efo_ko_2)), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_KO_n2")
-# save_results(plot_drc(list(efo_ko_3)), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_KO_n3")
+efo_ctrl <- process_plates(list(efo_ctrl_1, efo_ctrl_2, efo_ctrl_3), assay_id = "EFO21-Ctrl", normalisation_method = "GR")
+efo_ko <- process_plates(list(efo_ko_1, efo_ko_2, efo_ko_3), assay_id = "EFO21-KO", normalisation_method = "GR")
 
 save_results(plot_drc(list(efo_ko, efo_ctrl)), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_combined")
 save_results(plot_drc(list(efo_ko, efo_ctrl), plot_mean = T), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_combined_mean")
@@ -132,29 +111,18 @@ rmg_ko_3 <- list(
     )
 )
 
-rmg_ctrl <- process_plates(list(rmg_ctrl_1, rmg_ctrl_2, rmg_ctrl_3), assay_id = "RMGI-Ctrl")
-
-# rmg_ctrl_1 <- process_plates(list(rmg_ctrl_1), assay_id = "RMGI-Ctrl")
-# rmg_ctrl_2 <- process_plates(list(rmg_ctrl_2), assay_id = "RMGI-Ctrl")
-# rmg_ctrl_3 <- process_plates(list(rmg_ctrl_3), assay_id = "RMGI-Ctrl")
-
-# save_results(plot_drc(list(rmg_ctrl)), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_Ctrl_combined")
-# save_results(plot_drc(list(rmg_ctrl), plot_mean = T), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_Ctrl_combined_mean")
-# save_results(plot_drc(list(rmg_ctrl_1)), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_Ctrl_n1")
-# save_results(plot_drc(list(rmg_ctrl_2)), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_Ctrl_n2")
-# save_results(plot_drc(list(rmg_ctrl_3)), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_Ctrl_n3")
-
-rmg_ko <- process_plates(list(rmg_ko_1, rmg_ko_2, rmg_ko_3), assay_id = "RMGI-KO")
-
-# rmg_ko_1 <- process_plates(list(rmg_ko_1), assay_id = "RMGI-KO")
-# rmg_ko_2 <- process_plates(list(rmg_ko_2), assay_id = "RMGI-KO")
-# rmg_ko_3 <- process_plates(list(rmg_ko_3), assay_id = "RMGI-KO")
-
-# save_results(plot_drc(list(rmg_ko)), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_KO_combined")
-# save_results(plot_drc(list(rmg_ko), plot_mean = T), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_KO_combined_mean")
-# save_results(plot_drc(list(rmg_ko_1)), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_KO_n1")
-# save_results(plot_drc(list(rmg_ko_2)), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_KO_n2")
-# save_results(plot_drc(list(rmg_ko_3)), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_KO_n3")
+rmg_ctrl <- process_plates(list(rmg_ctrl_1, rmg_ctrl_2, rmg_ctrl_3), assay_id = "RMGI-Ctrl", normalisation_method = "GR")
+rmg_ko <- process_plates(list(rmg_ko_1, rmg_ko_2, rmg_ko_3), assay_id = "RMGI-KO", normalisation_method = "GR")
 
 save_results(plot_drc(list(rmg_ko, rmg_ctrl)), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_combined")
 save_results(plot_drc(list(rmg_ko, rmg_ctrl), plot_mean = T), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_combined_mean")
+
+# calculate AGR
+agr <- rbind(efo_ctrl$plate, efo_ko$plate, rmg_ctrl$plate, rmg_ko$plate) %>%
+    dplyr::select(ASSAY_ID, PLATE_ID, X0, XCTRL) %>%
+    distinct() %>%
+    mutate(AGR = XCTRL / X0)
+
+write.csv(agr, "figures/091024_arid1ako/091024_arid1ako_agr.csv", row.names = FALSE)
+
+cat("DONE\n")

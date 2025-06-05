@@ -109,6 +109,32 @@ match_layout <- function(layout, main) {
     return(layout)
 }
 
+# Normalisation functions ----
+# Normalises DRC data for an IC50 curve
+# `y = (y_i / y_nc) * 100`
+# Args:
+# intensity: numeric vector of intensities representing drugged wells
+# negative_control: Average of DMSO-treated (NC-1) wells
+ic <- function(intensity, negative_control) {
+    (intensity / negative_control) * 100
+}
+
+# Normalises DRC data for a GI50 curve
+# `y = (y_i - y_0) / (y_nc - y_0) * 100`
+# Args:
+# intensity: numeric vector of intensities representing drugged wells
+# negative_control: Average of DMSO-treated (NC-1) wells
+# zero_control: Average of untreated (NC-0) wells from GI50 plate
+gi <- function(intensity, negative_control, zero_control) {
+    ((intensity - zero_control) / (negative_control - zero_control)) * 100
+}
+
+# Normalises data to growth rate, as in Hafner et al., 2016
+# y = 2^(log2(y_i/y_0)/ log2(y_nc/y_0)) - 1
+gr <- function(intensity, negative_control, zero_control) {
+    (2^(log2(intensity / zero_control) / log2(negative_control / zero_control)) - 1) * 100
+}
+
 # Normalise intensities from viability assay given plate_layout and path
 # Args:
 # - main_path: Excel spreadsheet for the main treatment plate generated from SparkControl, see format_standard_xl for details
@@ -117,7 +143,22 @@ match_layout <- function(layout, main) {
 # - exclude: optional, wells to exclude as list of vector of rows, columns e.g. list(c('A', 1))
 # Returns:
 # - df: data.frame of concs, normalised treatment intensities
-process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, exclude = NULL) {
+process_plate <- function(
+    main_path,
+    gi50_path = NULL,
+    plate_layout = NULL,
+    exclude = NULL,
+    plate_id = NULL,
+    assay_id = NULL) {
+    if (is.null(plate_id)) {
+        warning("plate_id not supplied, generating random plate_id")
+        plate_id <- paste0(sample(LETTERS, 8, replace = TRUE), collapse = "")
+    }
+    if (is.null(assay_id)) {
+        warning("assay_id not supplied, generating random assay_id")
+        assay_id <- paste0(sample(LETTERS, 8, replace = TRUE), collapse = "")
+    }
+
     # read plate layout excel
     r <- if (!is.null(plate_layout)) {
         read_plate_layout(plate_layout)
@@ -187,45 +228,39 @@ process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, excl
         }
     }
 
-    cat("Processed intensities:\n")
-    print(intensity_lst)
-    cat("\n")
+    # cat("Processed intensities:\n")
+    # print(intensity_lst)
+    # cat("\n")
 
-    # take means of neg ctrls and backgrounds
-    mean_gi50 <- if (incl_gi50) mean(intensity_lst$gi50) else NULL
+    trt_df <- data.frame(intensity_lst[grepl("trt", names(intensity_lst))])
 
-    bckgrnd <- mean(intensity_lst[["bckgrnd"]])
-    neg_ctrl <- if (incl_gi50) mean(intensity_lst[["neg_ctrl"]]) - mean_gi50 - bckgrnd else mean(intensity_lst[["neg_ctrl"]]) - bckgrnd
+    conc_df <- data.frame(conc_lst)
+    concs <- as.numeric(apply(conc_df, 1, function(x) {
+        x <- unique(x)
+        x <- x[!is.na(x)]
 
-    # normalise treatment intensities
-    if (incl_gi50) {
-        trt_int <- sapply(intensity_lst[grepl("trt", names(intensity_lst))], function(x) x - mean_gi50 - bckgrnd)
-    } else {
-        trt_int <- sapply(intensity_lst[grepl("trt", names(intensity_lst))], function(x) x - bckgrnd)
-    }
-    trt_int_mean <- rowMeans(trt_int, na.rm = T)
-    trt_int_se <- apply(trt_int, 1, function(row) sd(row, na.rm = T) / sqrt(length(row)))
-    trt_int_norm_percmax <- (trt_int_mean / neg_ctrl) * 100
-
-    concs <- do.call(cbind, conc_lst)
-    concs <- apply(concs, 1, function(row) {
-        if (all(is.na(row))) {
-            return(NA)
-        } else {
-            return(row[1])
-        }
-    })
+        stopifnot(length(x) <= 1)
+        x
+    }))
 
     df <- data.frame(
-        concs = concs,
-        log_concs = log(concs),
-        trt_int_mean = trt_int_mean,
-        trt_int_se = trt_int_se,
-        trt_int_norm_percmax = trt_int_norm_percmax,
-        mean_gi50 = mean_gi50
+        ASSAY_ID = assay_id,
+        PLATE_ID = plate_id,
+        CONCS = concs,
+        TRT_INTENSITY = rowMeans(trt_df, na.rm = T),
+        XCTRL = mean(intensity_lst[["neg_ctrl"]], na.rm = T),
+        X0 = mean(intensity_lst[["gi50"]], na.rm = T),
+        BCKGRND = mean(intensity_lst[["bckgrnd"]], na.rm = T)
     )
+    df <- df %>%
+        mutate(
+            TRT_INTENSITY_IC = ic(TRT_INTENSITY, XCTRL),
+            TRT_INTENSITY_GI = gi(TRT_INTENSITY, XCTRL, X0),
+            TRT_INTENSITY_GR = gr(TRT_INTENSITY, XCTRL, X0)
+        )
 
-    if (incl_gi50) cat("Returning GI50\n") else cat("Returning IC50\n")
+    cat("Processed plate:\n")
+    print(head(df))
 
     return(df)
 }
@@ -236,18 +271,26 @@ process_plate <- function(main_path, gi50_path = NULL, plate_layout = NULL, excl
 # - assay_id: optional, appends assay_id to the return processed_plate
 # Returns:
 # - list containing processed_plate, model
-process_plates <- function(path_list, assay_id = NULL) {
+process_plates <- function(path_list, assay_id = NULL, normalisation_method = c("IC", "GI", "GR")) {
     all_plates <- lapply(path_list, function(p) {
         main_path <- if ("main_path" %in% names(p)) p$main_path else stop("Main path must be supplied!")
+
+        p$assay_id <- assay_id
 
         plate <- do.call(process_plate, p)
         return(plate)
     })
     all_plates <- do.call(rbind, all_plates)
 
-    if (!is.null(assay_id)) all_plates$assay_id <- assay_id
+    nm <- normalisation_method
+    if (length(nm) > 1) {
+        nm <- nm[1]
+        cat("Data is", nm, "normalised\n")
+    }
 
-    model <- drm(trt_int_norm_percmax ~ concs, data = all_plates, fct = LL.3u(upper = 100))
+    x <- all_plates[, c(paste0("TRT_INTENSITY_", nm), "CONCS")]
+    model <- drm(x, fct = LL.3u(upper = 100))
+
     return(list(
         plate = all_plates,
         model = model
@@ -270,10 +313,9 @@ get_model_stats <- function(
 # - plate_legend_name: controls name of legend for assay_id
 plot_drc <- function(processed_plates,
                      xlabs = "Concentration",
-                     ylabs = if (stat_type == "GI50") "Growth Inhibition (%)" else "Normalised Response (%)",
+                     ylabs = "Normalised Viability (%)",
                      units = "µM",
                      plate_legend_name = "Assay ID",
-                     stat_type = "GI50",
                      title = NULL,
                      plot_mean = F) {
     # returns simulated preds corresponding to model curve
@@ -282,11 +324,11 @@ plot_drc <- function(processed_plates,
         model <- processed_plate$model
 
         newdata_df <- data.frame(
-            concs = 10^seq(log10(max(plate$concs, na.rm = T)), log10(min(plate$concs, na.rm = T)), length.out = 200)
+            concs = 10^seq(log10(max(plate$CONCS, na.rm = T)), log10(min(plate$CONCS, na.rm = T)), length.out = 200)
         )
         preds <- as.data.frame(predict(model, newdata = newdata_df, interval = "confidence"))
         preds$concs <- newdata_df$concs
-        preds$assay_id <- unique(plate$assay_id)
+        preds$assay_id <- unique(plate$ASSAY_ID)
         return(preds)
     }
     drcs <- lapply(processed_plates, get_model_curve_)
@@ -295,10 +337,12 @@ plot_drc <- function(processed_plates,
     # get raw data points
     get_data_points_ <- function(processed_plate) {
         plate <- processed_plate$plate
+        model <- processed_plate$model
+
         df <- data.frame(
-            concs = plate$concs,
-            response = plate$trt_int_norm_percmax,
-            assay_id = unique(plate$assay_id)
+            concs = model$data$CONCS,
+            response = model$data[, 2],
+            assay_id = unique(plate$ASSAY_ID)
         )
         return(df)
     }
@@ -321,13 +365,16 @@ plot_drc <- function(processed_plates,
         plate <- processed_plate$plate
         model <- processed_plate$model
 
-        stats <- as.data.frame(drc::ED(model, respLev = c(10, 50, 90), display = F))
+        stat_type <- gsub("TRT_INTENSITY_", "", colnames(model$data[, 2, drop = F]))
+
+        stats <- as.data.frame(drc::ED(model, respLev = c(10, 50, 90), type = "absolute", display = F))
         colnames(stats) <- c(stat_type, "std_error")
         stats$levels <- rownames(stats)
-        stats$assay_id <- unique(plate$assay_id)
+        stats$assay_id <- unique(plate$ASSAY_ID)
         stats$units <- units
 
-        stats <- dplyr::relocate(stats, assay_id, levels, GI50, std_error, units)
+        # Use dynamic column name based on stat_type
+        stats <- dplyr::relocate(stats, assay_id, levels, all_of(stat_type), std_error, units)
 
         rownames(stats) <- NULL
 

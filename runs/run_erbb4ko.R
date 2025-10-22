@@ -41,4 +41,4 @@ mk3 <- list(
 mcf_ctrl <- process_plates(list(mc1, mc2, mc3), assay_id = "MCF7-Ctrl")
 mcf_ko <- process_plates(list(mk1, mk2, mk3), assay_id = "MCF7-KO")
 
-save_results(plot_drc(list(mcf_ctrl, mcf_ko), plot_mean = T), save_folder = "figures/erbb4ko", append_file_name = "MCF7_combined")
+save_results(plot_drc(list(mcf_ctrl, mcf_ko), plot_mean = T), save_folder = "figures/erbb4ko", append_file_name = "MCF7_combined", width = 4, height = 3)

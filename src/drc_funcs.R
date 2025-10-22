@@ -441,7 +441,7 @@ process_model <- function(model) {
 # - plot_results: results from plot_drc() or list containing $plot and $stats slots
 # - save_folder: folder to save results
 # - append_file_name: string to append to end of filename before extension
-save_results <- function(plot_results, save_folder, append_file_name = NULL) {
+save_results <- function(plot_results, save_folder, append_file_name = NULL, width = 5, height = 5) {
     plot <- plot_results$plot
     stats <- plot_results$stats
 
@@ -453,8 +453,8 @@ save_results <- function(plot_results, save_folder, append_file_name = NULL) {
     ggsave(
         fig_path,
         plot,
-        width = 6,
-        height = 6,
+        width = width,
+        height = height,
         units = "in",
         dpi = 600
     )

@@ -38,7 +38,7 @@ mk3 <- list(
     plate_layout = "data/erbb4ko/erbb4ko_plate_layout.xlsx"
 )
 
-mcf_ctrl <- process_plates(list(mc1, mc2, mc3), assay_id = "MCF7-Ctrl")
-mcf_ko <- process_plates(list(mk1, mk2, mk3), assay_id = "MCF7-KO")
+mcf_ctrl <- process_plates(list(mc1, mc2, mc3), assay_id = "MCF7-Ctrl", normalisation_method = "GR")
+mcf_ko <- process_plates(list(mk1, mk2, mk3), assay_id = "MCF7-KO", normalisation_method = "GR")
 
 save_results(plot_drc(list(mcf_ctrl, mcf_ko), plot_mean = T), save_folder = "figures/erbb4ko", append_file_name = "MCF7_combined", width = 4, height = 3)

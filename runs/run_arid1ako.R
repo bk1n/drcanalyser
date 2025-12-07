@@ -51,8 +51,8 @@ efo_ko_3 <- list(
 efo_ctrl <- process_plates(list(efo_ctrl_1, efo_ctrl_2, efo_ctrl_3), assay_id = "EFO21-Ctrl", normalisation_method = "GR")
 efo_ko <- process_plates(list(efo_ko_1, efo_ko_2, efo_ko_3), assay_id = "EFO21-KO", normalisation_method = "GR")
 
-save_results(plot_drc(list(efo_ko, efo_ctrl)), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_combined")
-save_results(plot_drc(list(efo_ko, efo_ctrl), plot_mean = T), save_folder = "figures/091024_arid1ako", append_file_name = "EFO21_combined_mean")
+save_results(plot_drc(list(efo_ko, efo_ctrl)), save_folder = "figures/arid1ako", append_file_name = "EFO21_combined")
+save_results(plot_drc(list(efo_ko, efo_ctrl), plot_mean = T), save_folder = "figures/arid1ako", append_file_name = "EFO21_combined_mean")
 
 # RMGI
 rmg_ctrl_1 <- list(
@@ -114,8 +114,8 @@ rmg_ko_3 <- list(
 rmg_ctrl <- process_plates(list(rmg_ctrl_1, rmg_ctrl_2, rmg_ctrl_3), assay_id = "RMGI-Ctrl", normalisation_method = "GR")
 rmg_ko <- process_plates(list(rmg_ko_1, rmg_ko_2, rmg_ko_3), assay_id = "RMGI-KO", normalisation_method = "GR")
 
-save_results(plot_drc(list(rmg_ko, rmg_ctrl)), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_combined")
-save_results(plot_drc(list(rmg_ko, rmg_ctrl), plot_mean = T), save_folder = "figures/091024_arid1ako", append_file_name = "RMGI_combined_mean")
+save_results(plot_drc(list(rmg_ko, rmg_ctrl)), save_folder = "figures/arid1ako", append_file_name = "RMGI_combined")
+save_results(plot_drc(list(rmg_ko, rmg_ctrl), plot_mean = T), save_folder = "figures/arid1ako", append_file_name = "RMGI_combined_mean")
 
 # calculate AGR
 agr <- rbind(efo_ctrl$plate, efo_ko$plate, rmg_ctrl$plate, rmg_ko$plate) %>%

@@ -27,17 +27,7 @@ efo_3 <- list(
     ) # exclude top dose
 )
 
-efo <- process_plates(list(efo_1, efo_2, efo_3), assay_id = "EFO21")
-
-efo_1 <- process_plates(list(efo_1), assay_id = "EFO21")
-efo_2 <- process_plates(list(efo_2), assay_id = "EFO21")
-efo_3 <- process_plates(list(efo_3), assay_id = "EFO21")
-
-save_results(plot_drc(list(efo)), save_folder = "figures/091024_base", append_file_name = "EFO21_combined")
-save_results(plot_drc(list(efo), plot_mean = T), save_folder = "figures/091024_base", append_file_name = "EFO21_combined_mean")
-save_results(plot_drc(list(efo_1)), save_folder = "figures/091024_base", append_file_name = "EFO21_n1")
-save_results(plot_drc(list(efo_2)), save_folder = "figures/091024_base", append_file_name = "EFO21_n2")
-save_results(plot_drc(list(efo_3)), save_folder = "figures/091024_base", append_file_name = "EFO21_n3")
+efo <- process_plates(list(efo_1, efo_2, efo_3), assay_id = "EFO21", normalisation_method = "GR")
 
 # RMGI
 rmg_1 <- list(
@@ -64,14 +54,9 @@ rmg_3 <- list(
     ) # exclude top dose
 )
 
-rmg <- process_plates(list(rmg_1, rmg_2, rmg_3), assay_id = "RMGI")
+rmg <- process_plates(list(rmg_1, rmg_2, rmg_3), assay_id = "RMGI", normalisation_method = "GR")
 
-rmg_1 <- process_plates(list(rmg_1), assay_id = "RMGI")
-rmg_2 <- process_plates(list(rmg_2), assay_id = "RMGI")
-rmg_3 <- process_plates(list(rmg_3), assay_id = "RMGI")
+save_results(plot_drc(list(efo, rmg)), save_folder = "figures/arid1ako_base", append_file_name = "combined")
+save_results(plot_drc(list(efo, rmg), plot_mean = T), save_folder = "figures/arid1ako_base", append_file_name = "combined_mean")
 
-save_results(plot_drc(list(rmg)), save_folder = "figures/091024_base", append_file_name = "RMGI_combined")
-save_results(plot_drc(list(rmg), plot_mean = T), save_folder = "figures/091024_base", append_file_name = "RMGI_combined_mean")
-save_results(plot_drc(list(rmg_1)), save_folder = "figures/091024_base", append_file_name = "RMGI_n1")
-save_results(plot_drc(list(rmg_2)), save_folder = "figures/091024_base", append_file_name = "RMGI_n2")
-save_results(plot_drc(list(rmg_3)), save_folder = "figures/091024_base", append_file_name = "RMGI_n3")
+cat("DONE\n")

@@ -42,3 +42,11 @@ mcf_ctrl <- process_plates(list(mc1, mc2, mc3), assay_id = "MCF7-Ctrl", normalis
 mcf_ko <- process_plates(list(mk1, mk2, mk3), assay_id = "MCF7-KO", normalisation_method = "GR")
 
 save_results(plot_drc(list(mcf_ctrl, mcf_ko), plot_mean = T), save_folder = "figures/erbb4ko", append_file_name = "MCF7_combined", width = 4, height = 3)
+
+# calculate AGR
+agr <- rbind(mcf_ctrl$plate, mcf_ko$plate) %>%
+    dplyr::select(ASSAY_ID, PLATE_ID, X0, XCTRL) %>%
+    distinct() %>%
+    mutate(AGR = XCTRL / X0)
+
+write.csv(agr, "figures/091024_erbb4ko/091024_erbb4ko_agr.csv", row.names = FALSE)

@@ -265,7 +265,7 @@ process_model <- function(model) {
 #'   the extension.
 #' @param width Plot width in inches.
 #' @param height Plot height in inches.
-#' @return Invisibly `NULL`; writes an SVG plot and a CSV of stats to disk.
+#' @return Invisibly `NULL`; writes an pdf plot and a CSV of stats to disk.
 #' @export
 save_results <- function(plot_results, save_folder, append_file_name = NULL, width = 5, height = 5) {
     plot <- plot_results$plot
@@ -273,7 +273,7 @@ save_results <- function(plot_results, save_folder, append_file_name = NULL, wid
 
     append_file_name <- if (!is.null(append_file_name)) paste0("_", append_file_name) else NULL
 
-    fig_path <- paste0(save_folder, "/drc_plot", append_file_name, ".svg")
+    fig_path <- paste0(save_folder, "/drc_plot", append_file_name, ".pdf")
 
     cat("Saving plot to", fig_path, "\n")
     ggplot2::ggsave(

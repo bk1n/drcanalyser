@@ -150,7 +150,7 @@ result_mean <- plot_drc(list(efo_ko, efo_ctrl), plot_mean = TRUE)
 
 ## 4. Saving results
 
-`save_results()` writes the plot as an SVG and the statistics as a CSV into a
+`save_results()` writes the plot as an pdf and the statistics as a CSV into a
 folder, with an optional filename suffix:
 
 ```{r}

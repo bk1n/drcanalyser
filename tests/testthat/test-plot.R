@@ -62,16 +62,15 @@ test_that("plot_drc(plot_mean = TRUE) collapses replicates without error", {
   expect_s3_class(out$plot, "ggplot")
 })
 
-test_that("save_results() writes an SVG figure and a CSV of stats", {
+test_that("save_results() writes an pdf figure and a CSV of stats", {
   skip_if_no_example_plates()
-  skip_if_not_installed("svglite") # ggsave() needs svglite to write SVG
 
   out <- quiet(plot_drc(list(example_processed("GR"))))
 
   save_dir <- withr::local_tempdir()
   quiet(save_results(out, save_folder = save_dir, append_file_name = "test"))
 
-  expect_true(file.exists(file.path(save_dir, "drc_plot_test.svg")))
+  expect_true(file.exists(file.path(save_dir, "drc_plot_test.pdf")))
   expect_true(file.exists(file.path(save_dir, "drc_stats_test.csv")))
 
   written <- utils::read.csv(file.path(save_dir, "drc_stats_test.csv"))

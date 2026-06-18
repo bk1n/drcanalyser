@@ -26,7 +26,7 @@ the extension.}
 \item{height}{Plot height in inches.}
 }
 \value{
-Invisibly \code{NULL}; writes an SVG plot and a CSV of stats to disk.
+Invisibly \code{NULL}; writes an pdf plot and a CSV of stats to disk.
 }
 \description{
 Save a plot and statistics to a folder

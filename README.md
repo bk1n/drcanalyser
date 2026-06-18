@@ -1,7 +1,7 @@
 # drcanalyser
 
 A small R package to analyse cell-viability / dose-response (DRC) assays. It reads
-SparkControl plate-reader exports, normalises intensities (IC/GI/GR), fits
+Tecan SparkControl plate-reader exports, normalises intensities (IC/GI/GR), fits
 dose-response curves with the `drc` package, and produces ggplot figures plus
 IC50/GI50/GR50 statistics.
 

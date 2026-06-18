@@ -1,0 +1,185 @@
+---
+title: "Analysing a dose-response experiment"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Analysing a dose-response experiment}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+# Code in this vignette is illustrative and is not executed: it points at plate
+# files that live outside the package. Copy the patterns below and substitute
+# your own paths.
+knitr::opts_chunk$set(eval = FALSE, collapse = TRUE, comment = "#>")
+```
+
+This vignette walks through a complete dose-response analysis with `drcanalyser`,
+using an ARID1A-knockout viability experiment as a worked example. The goal is to
+compare drug sensitivity between a control (`Ctrl`) and knockout (`KO`) cell line,
+each measured across three biological replicates.
+
+The pipeline has four steps:
+
+1. **Describe** each plate as a list of file paths and options.
+2. **Process** the replicate plates of a condition into a single fitted
+   dose-response model with `process_plates()`.
+3. **Plot** one or more conditions together with `plot_drc()`.
+4. **Save** the figure and statistics with `save_results()`.
+
+```{r}
+library(drcanalyser)
+```
+
+## 1. Describing a plate
+
+Every plate is a named list of arguments passed through to `process_plate()`.
+At minimum you supply `main_path` — the SparkControl Excel export for the
+treatment plate. For a GI50 / growth-rate analysis you also give `gi50_path`,
+the matching day-zero plate.
+
+```{r}
+ctrl_rep1 <- list(
+  main_path = "data/EFO_Ctrl_rep1_main.xlsx",
+  gi50_path = "data/EFO_Ctrl_rep1_GI50.xlsx"
+)
+```
+
+### Excluding wells
+
+Mis-dosed or unreliable wells are dropped with `exclude`, a list of
+`c(row, column)` coordinates. Here we drop the top-dose column because it was
+pipetted incorrectly:
+
+```{r}
+ctrl_rep2 <- list(
+  main_path = "data/EFO_Ctrl_rep2_main.xlsx",
+  gi50_path = "data/EFO_Ctrl_rep2_GI50.xlsx",
+  exclude = list(c("B", 2), c("C", 2), c("D", 2))
+)
+```
+
+### Plate layouts
+
+`drcanalyser` ships default layouts that map each well to a role (`trt`,
+`neg_ctrl`, `bckgrnd`, `gi50`) and a concentration — one for IC50 plates and one
+for GI50 plates. These defaults are used automatically, so most plates need no
+layout argument.
+
+If a plate used a non-standard layout, point `plate_layout` at your own layout
+workbook (an Excel file with `layout`, `concs` and optional `gi50` sheets — see
+`?read_plate_layout`):
+
+```{r}
+ctrl_rep3 <- list(
+  main_path = "data/EFO_Ctrl_rep3_main.xlsx",
+  gi50_path = "data/EFO_Ctrl_rep3_GI50.xlsx",
+  plate_layout = "data/plate_layout_custom.xlsx",
+  exclude = list(c("B", 2), c("C", 2), c("D", 2))
+)
+```
+
+## 2. Processing replicates into a model
+
+`process_plates()` takes a list of replicate plate specs, normalises and
+combines them, and fits a single three-parameter log-logistic dose-response
+curve (`drc::LL.3u`). Choose how intensities are normalised with
+`normalisation_method`:
+
+- `"IC"` — relative viability (`intensity / neg_ctrl`); for IC50.
+- `"GI"` — growth inhibition against the day-zero baseline; for GI50.
+- `"GR"` — growth-rate normalisation (Hafner *et al.*, 2016).
+
+`assay_id` labels the condition and becomes the grouping/legend key downstream.
+
+```{r}
+efo_ctrl <- process_plates(
+  list(ctrl_rep1, ctrl_rep2, ctrl_rep3),
+  assay_id = "EFO21-Ctrl",
+  normalisation_method = "GR"
+)
+```
+
+The knockout condition is described and processed the same way:
+
+```{r}
+efo_ko <- process_plates(
+  list(
+    list(
+      main_path = "data/EFO_KO_rep1_main.xlsx",
+      gi50_path = "data/EFO_KO_rep1_GI50.xlsx",
+      exclude = list(c("B", 2), c("C", 2), c("D", 2))
+    ),
+    list(
+      main_path = "data/EFO_KO_rep2_main.xlsx",
+      gi50_path = "data/EFO_KO_rep2_GI50.xlsx",
+      exclude = list(c("B", 2), c("C", 2), c("D", 2))
+    ),
+    list(
+      main_path = "data/EFO_KO_rep3_main.xlsx",
+      gi50_path = "data/EFO_KO_rep3_GI50.xlsx",
+      exclude = list(c("B", 2), c("C", 2), c("D", 2))
+    )
+  ),
+  assay_id = "EFO21-KO",
+  normalisation_method = "GR"
+)
+```
+
+Each result is a list with the combined `$plate` data frame and the fitted
+`$model`.
+
+## 3. Plotting and comparing conditions
+
+`plot_drc()` takes a *list* of processed conditions and overlays their curves on
+a single log-concentration axis. It returns the ggplot in `$plot` and a table of
+ED10/50/90 statistics in `$stats`.
+
+```{r}
+result <- plot_drc(list(efo_ko, efo_ctrl))
+result$plot
+result$stats
+```
+
+Set `plot_mean = TRUE` to collapse replicates at each concentration to a mean
+with standard-error bars:
+
+```{r}
+result_mean <- plot_drc(list(efo_ko, efo_ctrl), plot_mean = TRUE)
+```
+
+## 4. Saving results
+
+`save_results()` writes the plot as an SVG and the statistics as a CSV into a
+folder, with an optional filename suffix:
+
+```{r}
+save_results(
+  plot_drc(list(efo_ko, efo_ctrl)),
+  save_folder = "figures",
+  append_file_name = "EFO21_combined"
+)
+```
+
+## Derived metrics
+
+Because each processed plate carries its raw control means, you can derive
+further quantities directly from the `$plate` data frames. For example, the
+average growth ratio (untreated control over day-zero, `XCTRL / X0`) per plate:
+
+```{r}
+library(dplyr)
+
+agr <- rbind(efo_ctrl$plate, efo_ko$plate) %>%
+  select(ASSAY_ID, PLATE_ID, X0, XCTRL) %>%
+  distinct() %>%
+  mutate(AGR = XCTRL / X0)
+```
+
+## Summary
+
+A full experiment is just these steps repeated per cell line or drug: describe
+each plate as a list, `process_plates()` the replicates of a condition, then
+`plot_drc()` the conditions you want to compare. See the individual function
+help pages (e.g. `?process_plates`, `?plot_drc`) for the complete set of
+arguments.

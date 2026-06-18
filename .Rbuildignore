@@ -1,0 +1,13 @@
+^data$
+^figures$
+^runs$
+^run\.R$
+^setup\.bat$
+^plate_layout_ic50\.xlsx$
+^plate_layout_gi50\.xlsx$
+^README\.md$
+^CLAUDE\.md$
+^\.git$
+^\.gitignore$
+^.*\.Rproj$
+^\.Rproj\.user$

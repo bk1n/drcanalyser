@@ -1,0 +1,23 @@
+Package: drcanalyser
+Title: Analyse Cell-Viability / Dose-Response Assays
+Version: 0.0.1
+Authors@R:
+    person("Ben", "King", email = "bg.king@hotmail.com", role = c("aut", "cre"))
+Description: Reads Tecan SparkControl plate-reader exports, normalises intensities
+    (IC/GI/GR), fits drc dose-response curves, and produces ggplot figures plus
+    IC50/GI50/GR50 statistics.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Imports:
+    drc,
+    dplyr,
+    ggplot2,
+    tibble,
+    readxl,
+    magrittr
+Suggests:
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+Config/roxygen2/version: 8.0.0

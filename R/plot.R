@@ -1,3 +1,18 @@
+# Size of a molar concentration unit in molar (M); NA for unrecognised units.
+# Micro is accepted as the micro sign, Greek mu, or 'u' (e.g. "uM", "µM").
+# Kept internal and undocumented.
+conc_unit_factor <- function(unit) {
+    unit <- gsub("µ|μ", "u", unit)
+    switch(unit,
+        M = 1,
+        mM = 1e-3,
+        uM = 1e-6,
+        nM = 1e-9,
+        pM = 1e-12,
+        NA_real_
+    )
+}
+
 # Gets stats from a model, i.e. IC50, GI50, etc. (stub: model stats are computed
 # inline in plot_drc()). Kept internal and undocumented.
 get_model_stats <- function(
@@ -27,6 +42,10 @@ get_model_stats <- function(
 #' @param label_halfmax If `TRUE`, annotates the top-right of the plot with each
 #'   condition's half-maximal stat (IC50/GI50/GR50) and its 95% confidence
 #'   interval, one line per condition coloured to match the legend.
+#' @param label_units Molar unit (`'M'`, `'mM'`, `'uM'`, `'nM'`, `'pM'`) to
+#'   display the `label_halfmax` values in, converting from `units`. Defaults to
+#'   `NULL` (show in `units` unchanged). Only affects the half-max annotation,
+#'   not the axis or the returned `stats`.
 #' @return A list with the ggplot `plot` and a `stats` data.frame.
 #' @export
 plot_drc <- function(processed_plates,
@@ -36,7 +55,8 @@ plot_drc <- function(processed_plates,
                      plate_legend_name = "Assay ID",
                      title = NULL,
                      plot_mean = F,
-                     label_halfmax = F) {
+                     label_halfmax = F,
+                     label_units = NULL) {
     # returns simulated preds corresponding to model curve
     get_model_curve_ <- function(processed_plate) {
         plate <- processed_plate$plate
@@ -86,17 +106,20 @@ plot_drc <- function(processed_plates,
 
         stat_type <- gsub("TRT_INTENSITY_", "", colnames(model$data[, 2, drop = F]))
 
-        stats <- as.data.frame(drc::ED(model, respLev = c(10, 50, 90), type = "absolute", display = F))
-        colnames(stats) <- c(stat_type, "std_error")
+        # delta-method intervals so the CI is on the same (absolute effective-dose)
+        # scale as the estimate itself, rather than the e-parameter's confint.
+        stats <- as.data.frame(drc::ED(
+            model,
+            respLev = c(10, 50, 90),
+            type = "absolute",
+            interval = "delta",
+            level = 0.95,
+            display = F
+        ))
+        colnames(stats) <- c(stat_type, "std_error", "lower_ci", "upper_ci")
         stats$levels <- rownames(stats)
         stats$assay_id <- unique(plate$ASSAY_ID)
         stats$units <- units
-        stats$lower_ci <- rep(NA, 3)
-        stats$upper_ci <- rep(NA, 3)
-
-        ci <- as.data.frame(confint(model, level = 0.95))
-        stats[stats$levels == "e:1:50", "lower_ci"] <- ci["e:(Intercept)", "2.5 %"]
-        stats[stats$levels == "e:1:50", "upper_ci"] <- ci["e:(Intercept)", "97.5 %"]
 
         # Use dynamic column name based on stat_type
         stats <- dplyr::relocate(stats, assay_id, levels, dplyr::all_of(stat_type), std_error, units)
@@ -153,8 +176,26 @@ plot_drc <- function(processed_plates,
         palette <- scales::hue_pal()(length(assay_levels))
         names(palette) <- assay_levels
 
-        # plotmath unit token (quoted string), or nothing when units are NULL
-        unit_part <- if (!is.null(units)) paste0(' ~ "', units, '"') else ""
+        # convert the half-max value + CI from `units` to `label_units` if asked
+        display_units <- units
+        conv <- 1
+        if (!is.null(label_units)) {
+            if (is.null(units)) {
+                warning("label_units ignored: `units` is NULL, so there is no source scale to convert from.")
+            } else {
+                f_from <- conc_unit_factor(units)
+                f_to <- conc_unit_factor(label_units)
+                if (is.na(f_from) || is.na(f_to)) {
+                    warning("label_units conversion skipped: unrecognised molar unit ('", units, "' -> '", label_units, "'). Use one of M, mM, uM, nM, pM.")
+                } else {
+                    conv <- f_from / f_to
+                    display_units <- label_units
+                }
+            }
+        }
+
+        # plotmath unit token (quoted string), or nothing when there are no units
+        unit_part <- if (!is.null(display_units)) paste0(' ~ "', display_units, '"') else ""
 
         # stack one right-aligned line per condition down from the top-right corner
         n <- nrow(halfmax)
@@ -162,9 +203,9 @@ plot_drc <- function(processed_plates,
         y_pos <- y_max - (seq_len(n) - 1) * (y_max - y_min) * 0.06
 
         for (i in seq_len(n)) {
-            val <- signif(halfmax[i, stat_type], 2)
-            lo <- signif(halfmax[i, "lower_ci"], 2)
-            hi <- signif(halfmax[i, "upper_ci"], 2)
+            val <- signif(halfmax[i, stat_type] * conv, 2)
+            lo <- signif(halfmax[i, "lower_ci"] * conv, 2)
+            hi <- signif(halfmax[i, "upper_ci"] * conv, 2)
 
             # plotmath string parsed by annotate(parse = TRUE): e.g. IC[50]: 1.2 [0.85, 1.6] µM
             label <- sprintf(

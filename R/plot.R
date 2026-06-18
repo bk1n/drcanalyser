@@ -24,6 +24,9 @@ get_model_stats <- function(
 #' @param title Optional plot title.
 #' @param plot_mean If `TRUE`, collapses replicates by concentration into a mean
 #'   and plots standard-error bars.
+#' @param label_halfmax If `TRUE`, annotates the top-right of the plot with each
+#'   condition's half-maximal stat (IC50/GI50/GR50) and its 95% confidence
+#'   interval, one line per condition coloured to match the legend.
 #' @return A list with the ggplot `plot` and a `stats` data.frame.
 #' @export
 plot_drc <- function(processed_plates,
@@ -32,7 +35,8 @@ plot_drc <- function(processed_plates,
                      units = "\u00b5M",
                      plate_legend_name = "Assay ID",
                      title = NULL,
-                     plot_mean = F) {
+                     plot_mean = F,
+                     label_halfmax = F) {
     # returns simulated preds corresponding to model curve
     get_model_curve_ <- function(processed_plate) {
         plate <- processed_plate$plate
@@ -133,6 +137,53 @@ plot_drc <- function(processed_plates,
         ggplot2::ggtitle(title)
 
     g <- if (plot_mean) g + ggplot2::geom_errorbar(ggplot2::aes(ymin = response - se, ymax = response + se), width = .1, alpha = .5) else g
+
+    if (label_halfmax) {
+        halfmax <- stats[stats$levels == "e:1:50", ]
+
+        # the half-maximal value column is named after the stat type (IC50/GI50/GR50)
+        stat_type <- setdiff(
+            colnames(halfmax),
+            c("assay_id", "levels", "std_error", "units", "lower_ci", "upper_ci")
+        )
+        stat_prefix <- gsub("50$", "", stat_type)
+
+        # reproduce ggplot's default discrete palette so labels match the legend
+        assay_levels <- sort(unique(df_points$assay_id))
+        palette <- scales::hue_pal()(length(assay_levels))
+        names(palette) <- assay_levels
+
+        # plotmath unit token (quoted string), or nothing when units are NULL
+        unit_part <- if (!is.null(units)) paste0(' ~ "', units, '"') else ""
+
+        # stack one right-aligned line per condition down from the top-right corner
+        n <- nrow(halfmax)
+        x_pos <- max(df_points$concs, na.rm = T)
+        y_pos <- y_max - (seq_len(n) - 1) * (y_max - y_min) * 0.06
+
+        for (i in seq_len(n)) {
+            val <- signif(halfmax[i, stat_type], 2)
+            lo <- signif(halfmax[i, "lower_ci"], 2)
+            hi <- signif(halfmax[i, "upper_ci"], 2)
+
+            # plotmath string parsed by annotate(parse = TRUE): e.g. IC[50]: 1.2 [0.85, 1.6] µM
+            label <- sprintf(
+                '%s[50] * ": " * %s ~ "[" * %s * ", " * %s * "]"%s',
+                stat_prefix, val, lo, hi, unit_part
+            )
+
+            g <- g + ggplot2::annotate(
+                "text",
+                x = x_pos,
+                y = y_pos[i],
+                label = label,
+                parse = TRUE,
+                color = palette[[halfmax[i, "assay_id"]]],
+                hjust = 1,
+                size = 3
+            )
+        }
+    }
 
     return(list(
         plot = g,

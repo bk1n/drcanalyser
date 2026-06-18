@@ -46,6 +46,8 @@ get_model_stats <- function(
 #'   display the `label_halfmax` values in, converting from `units`. Defaults to
 #'   `NULL` (show in `units` unchanged). Only affects the half-max annotation,
 #'   not the axis or the returned `stats`.
+#' @param label_size Text size (in ggplot points) for the `label_halfmax`
+#'   annotation. Defaults to `4.5`.
 #' @return A list with the ggplot `plot` and a `stats` data.frame.
 #' @export
 plot_drc <- function(processed_plates,
@@ -56,7 +58,8 @@ plot_drc <- function(processed_plates,
                      title = NULL,
                      plot_mean = F,
                      label_halfmax = F,
-                     label_units = NULL) {
+                     label_units = NULL,
+                     label_size = 4.5) {
     # returns simulated preds corresponding to model curve
     get_model_curve_ <- function(processed_plate) {
         plate <- processed_plate$plate
@@ -221,7 +224,7 @@ plot_drc <- function(processed_plates,
                 parse = TRUE,
                 color = palette[[halfmax[i, "assay_id"]]],
                 hjust = 1,
-                size = 3
+                size = label_size
             )
         }
     }

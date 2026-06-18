@@ -1,5 +1,6 @@
 ^data$
 ^figures$
+^\.vscode$
 ^runs$
 ^run\.R$
 ^setup\.bat$

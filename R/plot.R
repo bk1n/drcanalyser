@@ -1,9 +1,10 @@
 # Gets stats from a model, i.e. IC50, GI50, etc. (stub: model stats are computed
 # inline in plot_drc()). Kept internal and undocumented.
 get_model_stats <- function(
-    model,
-    units = "uM",
-    stat_type = "GI50") {
+  model,
+  units = "uM",
+  stat_type = "GI50"
+) {
     # get gi50 / ic50
     return(stat)
 }
@@ -86,6 +87,12 @@ plot_drc <- function(processed_plates,
         stats$levels <- rownames(stats)
         stats$assay_id <- unique(plate$ASSAY_ID)
         stats$units <- units
+        stats$lower_ci <- rep(NA, 3)
+        stats$upper_ci <- rep(NA, 3)
+
+        ci <- as.data.frame(confint(model, level = 0.95))
+        stats[stats$levels == "e:1:50", "lower_ci"] <- ci["e:(Intercept)", "2.5 %"]
+        stats[stats$levels == "e:1:50", "upper_ci"] <- ci["e:(Intercept)", "97.5 %"]
 
         # Use dynamic column name based on stat_type
         stats <- dplyr::relocate(stats, assay_id, levels, dplyr::all_of(stat_type), std_error, units)

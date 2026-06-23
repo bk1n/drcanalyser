@@ -109,25 +109,40 @@ plot_drc <- function(processed_plates,
 
         stat_type <- gsub("TRT_INTENSITY_", "", colnames(model$data[, 2, drop = F]))
 
-        # delta-method intervals so the CI is on the same (absolute effective-dose)
+        # fls-method intervals so the CI is on the same (absolute effective-dose)
         # scale as the estimate itself, rather than the e-parameter's confint.
-        stats <- as.data.frame(drc::ED(
+        stats <- log(as.data.frame(drc::ED(
             model,
             respLev = c(10, 50, 90),
             type = "absolute",
-            interval = "delta",
+            interval = "fls",
             level = 0.95,
             display = F
-        ))
-        colnames(stats) <- c(stat_type, "std_error", "lower_ci", "upper_ci")
+        )))
+        colnames(stats) <- c(stat_type, "lower_ci", "upper_ci")
         stats$levels <- rownames(stats)
         stats$assay_id <- unique(plate$ASSAY_ID)
         stats$units <- units
 
         # Use dynamic column name based on stat_type
-        stats <- dplyr::relocate(stats, assay_id, levels, dplyr::all_of(stat_type), std_error, units)
+        stats <- dplyr::relocate(stats, assay_id, levels, dplyr::all_of(stat_type), units)
 
         rownames(stats) <- NULL
+
+        # CI for the lower-asymptote parameter (c = minimum effect / maximum inhibition)
+        c_parm <- grep("^c:", names(coef(model)), value = TRUE)
+        c_ci <- stats::confint(model)[c_parm, , drop = FALSE]
+        emax_row <- setNames(
+            data.frame(
+                unique(plate$ASSAY_ID), "Emax",
+                unname(coef(model)[[c_parm]]),
+                NA_character_,
+                c_ci[1L, 1L], c_ci[1L, 2L],
+                stringsAsFactors = FALSE
+            ),
+            c("assay_id", "levels", stat_type, "units", "lower_ci", "upper_ci")
+        )
+        stats <- rbind(stats, emax_row)
 
         return(stats)
     }
